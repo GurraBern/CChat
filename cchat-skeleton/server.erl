@@ -1,47 +1,102 @@
 -module(server).
 -export([start/1,stop/1]).
 
--record( channel, {nicks, pids}).
+-record( 
+    channels, {channelMap = []::channel}
+).
+
+-record(
+   channel, {nicks = [], pid = []}
+).
 
 initial_state() ->
-    %#currentState{
-        nicks = [],
-        channels = [].
-    %}.
+    #channels{channelMap = maps:new()}.
 
 
 
+%Fraga: GUI printar inte ut error meddelande?
+%Fraga: Ar varan losning viable, ar det multithreadat ish?
+handler(Channels, {join, Channel, Nick, From}) ->
+    case maps:find(Channel, Channels) of
+        error -> 
+            NewChannel = #channel{nicks = [Nick], pid = [From]},
+            NewChannels = maps:put(Channel, NewChannel, Channels),
+            From ! ok,
+            {reply, ok, NewChannels};
+        {ok, _} -> 
+            CurrentChannel = maps:get(Channel, Channels),
+            NicksList = CurrentChannel#channel.nicks,
+            PidList = CurrentChannel#channel.pid,
+            case lists:member(Nick, NicksList) of 
+                true ->
+                    From ! error,
+                    {reply, error, Channels};
 
-handler(St, {join, Channel, Nick})->
-    io:format("This is the server you tried to join : "),
+                false -> 
+                    NewNicksList = lists:append(NicksList, [Nick]),
+                    NewPidList = lists:append(PidList, [From]),
+                    From ! ok,
+                    NewChannel = #channel{nicks = NewNicksList, pid = NewPidList},
+                    NewChannels = maps:update(Channel, NewChannel, Channels),
+                    {reply, ok, NewChannels}
+            end
+    end;
 
-    
-    case lists:member(Channel, channels) of
-        true ->
-            %joina channel
-                case lists:member(Nick, nicks) of
+    handler(Channels, {leave, Channel, Nick, From}) ->
+        case maps:find(Channel, Channels) of
+            error -> 
+                From ! error,
+                {reply, error, Channels};
+            {ok, _} -> 
+                CurrentChannel = maps:get(Channel, Channels),
+                NicksList = CurrentChannel#channel.nicks,
+                PidList = CurrentChannel#channel.pid,
+                case lists:member(Nick, NicksList) of 
                     true ->
-                        {reply, error, St};
-                    false ->
-                        
-
-
-            %% do something
-            
-        false ->
-            ok
-    end.
-
-%    {join, Channel}->
- %       {reply, ok, St}
+                        NewNicksList = lists:delete(Nick, NicksList),
+                        NewPidList = lists:delete(From, PidList),
+                        NewChannel = #channel{nicks = NewNicksList, pid = NewPidList},
+                        NewChannels = maps:update(Channel, NewChannel, Channels),
+                        From ! ok,
+                        {reply, ok, NewChannels};
     
-    %{reply, {error, user_already_joined, "Skrrpaow"}
+                    false -> 
+                        From ! error,
+                        {reply, error, Channels}
+                end
+        end;
+
+ handler(Channels, {message_send, Msg, Channel, From}) ->
+    io:fwrite("Does something~n"),
+
+            case maps:find(Channel, Channels) of
+                error -> 
+                    From ! error,
+                    {reply, error, Channels};
+                {ok, _} -> 
+                    CurrentChannel = maps:get(Channel, Channels),
+                    NicksList = CurrentChannel#channel.nicks,
+                    PidList = CurrentChannel#channel.pid,
+                    From ! ok,
+                    {reply, ok, Channels}
+                    %case index_of(From, PidList) of
+                    %    not_found -> From ! error, {reply, error, Channels};
+                    %    Index -> ActiveNick = lists:nth((Index-1), NicksList),
+                    %    lists:map (fun (sendMessage({ActiveNick, Channel} PidList)))
+                    %end
+            end.
+
+%handler(Channels, {leave, Channel, nick, self()})->
+%NewMap = maps:remove().
+
+%TestChannel = #channel{nicks=[Nick]}, 
+%NewChannelMap = maps:put(Channel, TestChannel, St#channels.channelMap),
+%io:fwrite("value of NewMap is: ~p~n", [NewChannelMap]),
     
-
-
-
-
-
+%DETTA FUNKAR
+%Test = #channel{nicks=["Gurk", "Krut"]},
+%Nicks = Test#channel.nicks,
+%io:fwrite("value of test is: ~s\n", [Nicks]).
 
 
 % Start a new server process with the given name
@@ -50,7 +105,7 @@ start(ServerAtom) ->
     % TODO Implement function
     % - Spawn a new process which waits for a message, handles it, then loops infinitely
     
-    genserver:start(ServerAtom, initial_state(), fun handler/2).
+    genserver:start(ServerAtom, maps:new(), fun handler/2).
     %gen_server:start(ServerAtom, printMsg()).
     % - Register this process to ServerAtom
     % - Return the process ID

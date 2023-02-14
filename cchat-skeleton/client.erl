@@ -6,8 +6,7 @@
 -record(client_st, {
     gui, % atom of the GUI process
     nick, % nick/username of the client
-    server, % atom of the chat server
-    channels
+    server % atom of the chat server
 }).
 
 % Return an initial state record. This is called from GUI.
@@ -16,12 +15,9 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
     #client_st{
         gui = GUIAtom,
         nick = Nick,
-        server = ServerAtom,
-        channels = []
+        server = ServerAtom
     }.
 
-
-    
 
 % handle/2 handles each kind of request from GUI
 % Parameters:
@@ -33,34 +29,34 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 
 % Join channel
 handle(St, {join, Channel}) ->
-    %io:format("This is OUR VALUE: +++++++");
-    %Kolla om channel finns -> ELSE create channel
-
-    Response = genserver:request(St#client_st.server, {join, Channel}),
-
+    Response = genserver:request(St#client_st.server, {join, Channel, nick, self()}),
     case Response of
-        ok -> {reply, ok, St}, currentState = St;
-        error -> {reply, {error, user_already_joined, "User already joined"}}
+        ok -> {reply, ok, St};
+        error -> {reply, {error, user_already_joined, "User already joined"}, St}
     end;
-
-    % TODO: Implement this function      
-    % {reply, ok, St} ;
-    % {reply, {error, not_implemented, "join not implemented"}, St};
-
 
 % Leave channel
 handle(St, {leave, Channel}) ->
-    % TODO: Implement this function
-    % {reply, ok, St} ;
-    {reply, {error, not_implemented, "leave not implemented"}, St} ;
+    Response = genserver:request(St#client_st.server, {leave, Channel, nick, self()}),
+    case Response of
+        ok -> {reply, ok, St};
+        error -> {reply, {error, user_not_in_chanel, "User not in channel"}, St}
+    end;
 
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
+    io:format("message send"), 
+    %genserver:request(St, {message_send, Msg, Channel, self()}),
+    message_send ! Msg,
+    {reply, ok, St};
+%Channels, {message_send, Channel, Nick, From}
+ %handler(Channels, {message_send, Msg, Channel, Nick, From}) ->
+
     % TODO: Implement this function
     % {reply, ok, St} ;
 
     %message_send ! Msg
-    {reply, {error, not_implemented, "message sending not implemented"}, St} ;
+    %{reply, {error, not_implemented, "message sending not implemented"}, St} ;
 
 % This case is only relevant for the distinction assignment!
 % Change nick (no check, local only)
