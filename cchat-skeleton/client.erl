@@ -29,7 +29,7 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 
 % Join channel
 handle(St, {join, Channel}) ->
-    Response = genserver:request(St#client_st.server, {join, Channel, nick, self()}),
+    Response = genserver:request(St#client_st.server, {join, Channel, St#client_st.nick, self()}),
     case Response of
         ok -> {reply, ok, St};
         error -> {reply, {error, user_already_joined, "User already joined"}, St}
@@ -45,10 +45,10 @@ handle(St, {leave, Channel}) ->
 
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
-    io:format("message send"), 
-    %genserver:request(St, {message_send, Msg, Channel, self()}),
-    message_send ! Msg,
+    %io:format("message send"), 
+    genserver:request(St#client_st.server, {message_send, Msg, Channel, self()}),
     {reply, ok, St};
+
 %Channels, {message_send, Channel, Nick, From}
  %handler(Channels, {message_send, Msg, Channel, Nick, From}) ->
 

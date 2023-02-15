@@ -27,6 +27,9 @@ handler(Channels, {join, Channel, Nick, From}) ->
             CurrentChannel = maps:get(Channel, Channels),
             NicksList = CurrentChannel#channel.nicks,
             PidList = CurrentChannel#channel.pid,
+
+            %io:fwrite("Nick: ~n~p ", [Nick]),
+            %io:fwrite("NicksLists: ~p~n ", [NicksList]),
             case lists:member(Nick, NicksList) of 
                 true ->
                     From ! error,
@@ -67,7 +70,7 @@ handler(Channels, {join, Channel, Nick, From}) ->
         end;
 
  handler(Channels, {message_send, Msg, Channel, From}) ->
-    io:fwrite("Does something~n"),
+    io:fwrite("Message received~n"),
 
             case maps:find(Channel, Channels) of
                 error -> 
@@ -77,27 +80,20 @@ handler(Channels, {join, Channel, Nick, From}) ->
                     CurrentChannel = maps:get(Channel, Channels),
                     NicksList = CurrentChannel#channel.nicks,
                     PidList = CurrentChannel#channel.pid,
-                    From ! ok,
+
+
+                    %En for loop som skickar till alla Channels, hur vet vi att det hamnar korrekt?
+                    %Ska vi ha en handler i client to receive messages
+                    From ! {message_receive, Channel, From, Msg},
                     {reply, ok, Channels}
+
+
                     %case index_of(From, PidList) of
                     %    not_found -> From ! error, {reply, error, Channels};
                     %    Index -> ActiveNick = lists:nth((Index-1), NicksList),
                     %    lists:map (fun (sendMessage({ActiveNick, Channel} PidList)))
                     %end
             end.
-
-%handler(Channels, {leave, Channel, nick, self()})->
-%NewMap = maps:remove().
-
-%TestChannel = #channel{nicks=[Nick]}, 
-%NewChannelMap = maps:put(Channel, TestChannel, St#channels.channelMap),
-%io:fwrite("value of NewMap is: ~p~n", [NewChannelMap]),
-    
-%DETTA FUNKAR
-%Test = #channel{nicks=["Gurk", "Krut"]},
-%Nicks = Test#channel.nicks,
-%io:fwrite("value of test is: ~s\n", [Nicks]).
-
 
 % Start a new server process with the given name
 % Do not change the signature of this function.
