@@ -14,13 +14,15 @@ initial_state() ->
 
 
 
-%Fraga: GUI printar inte ut error meddelande?
-%Fraga: Ar varan losning viable, ar det multithreadat ish?
 handler(Channels, {join, Channel, Nick, From}) ->
     case maps:find(Channel, Channels) of
         error -> 
             NewChannel = #channel{nicks = [Nick], pid = [From]},
             NewChannels = maps:put(Channel, NewChannel, Channels),
+
+
+            genserver:start(list_to_atom(Channel), NicksList, fun),
+
             From ! ok,
             {reply, ok, NewChannels};
         {ok, _} -> 
@@ -70,30 +72,40 @@ handler(Channels, {join, Channel, Nick, From}) ->
         end;
 
  handler(Channels, {message_send, Msg, Channel, From}) ->
-    io:fwrite("Message received~n"),
+    case maps:find(Channel, Channels) of
+        error -> 
+            From ! error, % TODO does this do anything?
+            {reply, error, Channels};
+        {ok, _} -> 
+            CurrentChannel = maps:get(Channel, Channels),
+            NicksList = CurrentChannel#channel.nicks,
+            PidList = CurrentChannel#channel.pid,
 
-            case maps:find(Channel, Channels) of
-                error -> 
-                    From ! error,
-                    {reply, error, Channels};
-                {ok, _} -> 
-                    CurrentChannel = maps:get(Channel, Channels),
-                    NicksList = CurrentChannel#channel.nicks,
-                    PidList = CurrentChannel#channel.pid,
+            %Ans= We need to use the Pid of the channel to send messages to, we should be able to kill a server and still send messages with help of that Pid
+            spawn(
+                fun() ->
+                    [genserver:request(To, {message_receive, Channel, From, Msg})|| To <- PidList]
+                end),
+
+            {reply, message_send, Channels}
 
 
-                    %En for loop som skickar till alla Channels, hur vet vi att det hamnar korrekt?
-                    %Ska vi ha en handler i client to receive messages
-                    From ! {message_receive, Channel, From, Msg},
-                    {reply, ok, Channels}
+            %case index_of(From, PidList) of
+            %    not_found -> From ! error, {reply, error, Channels};
+            %    Index -> ActiveNick = lists:nth((Index-1), NicksList),
+            %    lists:map (fun (sendMessage({ActiveNick, Channel} PidList)))
+            %end
+    end.
 
 
-                    %case index_of(From, PidList) of
-                    %    not_found -> From ! error, {reply, error, Channels};
-                    %    Index -> ActiveNick = lists:nth((Index-1), NicksList),
-                    %    lists:map (fun (sendMessage({ActiveNick, Channel} PidList)))
-                    %end
-            end.
+print_element(Pid, MsgRequest, From) ->
+    Pid ! MsgRequest,
+    io:format("~p~n", [Pid]).
+
+print_list(List, MsgRequest, From) ->
+    lists:foreach(fun(E) -> print_element(E, MsgRequest, From) end, List).
+
+
 
 % Start a new server process with the given name
 % Do not change the signature of this function.
