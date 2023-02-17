@@ -6,7 +6,8 @@
 -record(client_st, {
     gui, % atom of the GUI process
     nick, % nick/username of the client
-    server % atom of the chat server
+    server, % atom of the chat server
+    channels
 }).
 
 % Return an initial state record. This is called from GUI.
@@ -15,7 +16,8 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
     #client_st{
         gui = GUIAtom,
         nick = Nick,
-        server = ServerAtom
+        server = ServerAtom,
+        channels = []
     }.
 
 
@@ -29,24 +31,47 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 
 % Join channel
 handle(St, {join, Channel}) ->
-    Response = genserver:request(St#client_st.server, {join, Channel, St#client_st.nick, self()}),
+    Response = catch genserver:request(St#client_st.server, {join, Channel, St#client_st.nick, self()}),
     case Response of
-        ok -> {reply, ok, St};
-        error -> {reply, {error, user_already_joined, "User already joined"}, St}
+        ok -> 
+            NewSt = St#client_st{gui = St#client_st.gui, nick = St#client_st.nick, server = St#client_st.server, channels = lists:append(St#client_st.channels, [Channel])},
+            {reply, ok, NewSt};
+        user_already_joined -> 
+            {reply, {error, user_already_joined, "User already joined"}, St};
+        {'EXIT', _} ->
+            {reply, {error, server_not_reached, "Non responding server"}, St}
     end;
 
 % Leave channel
 handle(St, {leave, Channel}) ->
-    Response = genserver:request(St#client_st.server, {leave, Channel, nick, self()}),
+    Response = genserver:request(list_to_atom(Channel), {leave, self()}),
     case Response of
-        ok -> {reply, ok, St};
-        error -> {reply, {error, user_not_in_chanel, "User not in channel"}, St}
+        leave ->
+                %Ta bort from list
+            lists:delete([Channel], St#client_st.channels),
+            {reply, ok, St};
+        error -> {reply, {error, user_not_joined, "User not in channel"}, St}
     end;
 
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
-    genserver:request(St#client_st.server, {message_send, Msg, Channel, self()}),
-    {reply, ok, St};
+
+    
+
+    Response = genserver:request(list_to_atom(Channel), {message_send, Msg, Channel, self(), St#client_st.nick}),
+
+    case Response of
+        message_send -> 
+            {reply, ok, St};
+        user_not_joined ->
+            {reply, user_not_joined, St};
+        error ->
+            {reply, error, St};
+        {'EXIT', _} ->
+            {reply, {error,server_not_reached, "Couldn't reach server"}, St}
+    end;
+
+
 
 % This case is only relevant for the distinction assignment!
 % Change nick (no check, local only)

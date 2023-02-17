@@ -1,115 +1,93 @@
 -module(server).
 -export([start/1,stop/1]).
 
--record( 
-    channels, {channelMap = []::channel}
+-record(serverState, {
+    createdChannels = []
+    }  
 ).
 
--record(
-   channel, {nicks = [], pid = []}
+-record(channelState, {
+    channelName,
+    pids = []
+    %pids = []::user,
+    %users=maps:new()  %pidKey, nickValue
+    }  
 ).
+
+%TODO fix unique user names on channels
 
 
 initial_state() ->
-   % #serverState{}.
-    #channels{channelMap = maps:new()}.
+    #serverState{createdChannels = []}.
 
 
+handler(ServerState, {join, Channel, Nick, From}) ->
+    case lists:member(Channel, ServerState#serverState.createdChannels) of
+        false -> 
+            NewChannel = #channelState{channelName = Channel, pids = [From]},
+            NewServerState = ServerState#serverState{createdChannels = [ServerState#serverState.createdChannels ++ Channel]},%Borde lägga till en ny channel till ServerState, TODO check!
+            genserver:start(list_to_atom(Channel), NewChannel, fun channel_handler/2),
 
-handler(Channels, {join, Channel, Nick, From}) ->
-    case maps:find(Channel, Channels) of
-        error -> 
-            NewChannel = #channel{nicks = [Nick], pid = [From]},
-            NewChannels = maps:put(Channel, NewChannel, Channels),
+            {reply, ok, NewServerState};
 
-
-            %genserver:start(list_to_atom(Channel), NewChannels, fun channel_handler/2),
-
-            From ! ok,
-            %{reply, join, NewChannels};
-            {reply, ok, NewChannels};
-        {ok, _} -> 
-            CurrentChannel = maps:get(Channel, Channels),
-            NicksList = CurrentChannel#channel.nicks,
-            PidList = CurrentChannel#channel.pid,
-
-            %io:fwrite("Nick: ~n~p ", [Nick]),
-            %io:fwrite("NicksLists: ~p~n ", [NicksList]),
-            case lists:member(Nick, NicksList) of 
-                true ->
-
-                    %genserver:request(From, error),
-                    From ! error,
-                    {reply, error, Channels};
-
-                false -> 
-                    NewNicksList = lists:append(NicksList, [Nick]),
-                    NewPidList = lists:append(PidList, [From]),
-                    From ! ok,
-                    NewChannel = #channel{nicks = NewNicksList, pid = NewPidList},
-                    NewChannels = maps:update(Channel, NewChannel, Channels),
-                    {reply, ok, NewChannels}
+        true -> 
+            Response = genserver:request(list_to_atom(Channel), {join, From}),
+            case Response of
+                ok ->
+                    {reply, ok, ServerState};
+                user_already_joined ->
+                    {reply, user_already_joined, ServerState};
+                error ->
+                    {reply, error, ServerState}
             end
-    end;
-
-    handler(Channels, {leave, Channel, Nick, From}) ->
-        case maps:find(Channel, Channels) of
-            error -> 
-                From ! error,
-                {reply, error, Channels};
-            {ok, _} -> 
-                CurrentChannel = maps:get(Channel, Channels),
-                NicksList = CurrentChannel#channel.nicks,
-                PidList = CurrentChannel#channel.pid,
-                case lists:member(Nick, NicksList) of 
-                    true ->
-                        NewNicksList = lists:delete(Nick, NicksList),
-                        NewPidList = lists:delete(From, PidList),
-                        NewChannel = #channel{nicks = NewNicksList, pid = NewPidList},
-                        NewChannels = maps:update(Channel, NewChannel, Channels),
-                        From ! ok,
-                        {reply, ok, NewChannels};
-    
-                    false -> 
-                        From ! error,
-                        {reply, error, Channels}
-                end
-        end;
-
-
- handler(Channels, {message_send, Msg, Channel, From}) ->
-    case maps:find(Channel, Channels) of
-        error -> 
-            From ! error, % TODO does this do anything?
-            {reply, error, Channels};
-        {ok, _} -> 
-            CurrentChannel = maps:get(Channel, Channels),
-            NicksList = CurrentChannel#channel.nicks,
-            PidList = CurrentChannel#channel.pid,
-
-            %Ans= We need to use the Pid of the channel to send messages to, we should be able to kill a server and still send messages with help of that Pid
-            spawn(
-                fun() ->
-                    [genserver:request(To, {message_receive, Channel, pid_to_list(To), Msg})|| To <- PidList]
-                end),
-            {reply, message_send, Channels}
-
-
-            %case index_of(From, PidList) of
-            %    not_found -> From ! error, {reply, error, Channels};
-            %    Index -> ActiveNick = lists:nth((Index-1), NicksList),
-            %    lists:map (fun (sendMessage({ActiveNick, Channel} PidList)))
-            %end
     end.
 
+channel_handler(ChannelState, {join, From})->
+    io:format("this doesnt work: ~p~n", [ChannelState#channelState.pids]), %%TODO continue from here
+    case lists:member(From, ChannelState#channelState.pids) of
+        true ->
+            {reply, user_already_joined, ChannelState};
+        false ->
+            UpdatedPids = lists:append(ChannelState#channelState.pids, [From]),
 
-sendMessage(Pid, MsgRequest, From) ->
-    Pid ! MsgRequest,
-    io:format("~p~n", [Pid]).
+            io:format("works: ~p~n", [UpdatedPids]),
+            NewChannelState = ChannelState#channelState{pids = UpdatedPids},
+            {reply, ok, NewChannelState}
 
-sendMessages(List, MsgRequest, From) ->
-    lists:foreach(fun(E) -> sendMessage(E, MsgRequest, From) end, List).
+    end;
 
+channel_handler(ChannelState, {leave, From}) ->
+    case lists:member(From, ChannelState#channelState.pids) of
+        true ->
+            NewPidList = lists:delete(From, ChannelState#channelState.pids),
+            NewChannelState = ChannelState#channelState{channelName = ChannelState#channelState.channelName, pids = NewPidList},
+            {reply, leave, NewChannelState};
+        false ->
+            {reply, error, ChannelState}
+    end;
+
+
+channel_handler(ChannelState, {message_send, Msg, Channel, From, Nick}) ->  
+    %TODO kolla om medlem?
+
+    InChannel = lists:member(From, ChannelState#channelState.pids),
+    
+    case InChannel of
+        true->
+            spawn(
+            fun() ->
+                [genserver:request(To, {message_receive, Channel, Nick, Msg}) || To <- ChannelState#channelState.pids, To =/= From]
+            end),
+        {reply, message_send, ChannelState};
+
+        false->
+            {reply, user_not_joined, ChannelState}
+    end.
+
+  
+stopprocesses(Atom) ->
+    Pids = [Pid || {_, Pid, _} <- erlang:processes(), erlang:whereis(Atom) =:= self()],
+    lists:foreach(fun(Pid) -> erlang:exit(Pid, kill) end, Pids).
 
 
 % Start a new server process with the given name
@@ -118,7 +96,7 @@ start(ServerAtom) ->
     % TODO Implement function
     % - Spawn a new process which waits for a message, handles it, then loops infinitely
     
-    genserver:start(ServerAtom, maps:new(), fun handler/2).
+    genserver:start(ServerAtom, initial_state(), fun handler/2).
     %gen_server:start(ServerAtom, printMsg()).
     % - Register this process to ServerAtom
     % - Return the process ID
@@ -129,4 +107,13 @@ start(ServerAtom) ->
 stop(ServerAtom) ->
     % TODO Implement function
     % Return ok
+
+    stopprocesses(ServerAtom),
     genserver:stop(ServerAtom).
+    %io:format("created Channels end of life: ~p~n", [ServerAtom#serverState.createdChannels]),
+    %spawn(
+    %    fun() ->
+     %       [genserver:stop(list_to_atom(Channel)) || Channel <- ServerAtom#serverState.createdChannels] %TODO Shouldnt this work?
+     %   end), 
+
+   % genserver:stop(ServerAtom).
