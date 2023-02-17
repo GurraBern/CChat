@@ -9,7 +9,9 @@
    channel, {nicks = [], pid = []}
 ).
 
+
 initial_state() ->
+   % #serverState{}.
     #channels{channelMap = maps:new()}.
 
 
@@ -21,9 +23,10 @@ handler(Channels, {join, Channel, Nick, From}) ->
             NewChannels = maps:put(Channel, NewChannel, Channels),
 
 
-            genserver:start(list_to_atom(Channel), NicksList, fun),
+            %genserver:start(list_to_atom(Channel), NewChannels, fun channel_handler/2),
 
             From ! ok,
+            %{reply, join, NewChannels};
             {reply, ok, NewChannels};
         {ok, _} -> 
             CurrentChannel = maps:get(Channel, Channels),
@@ -34,6 +37,8 @@ handler(Channels, {join, Channel, Nick, From}) ->
             %io:fwrite("NicksLists: ~p~n ", [NicksList]),
             case lists:member(Nick, NicksList) of 
                 true ->
+
+                    %genserver:request(From, error),
                     From ! error,
                     {reply, error, Channels};
 
@@ -71,6 +76,7 @@ handler(Channels, {join, Channel, Nick, From}) ->
                 end
         end;
 
+
  handler(Channels, {message_send, Msg, Channel, From}) ->
     case maps:find(Channel, Channels) of
         error -> 
@@ -84,9 +90,8 @@ handler(Channels, {join, Channel, Nick, From}) ->
             %Ans= We need to use the Pid of the channel to send messages to, we should be able to kill a server and still send messages with help of that Pid
             spawn(
                 fun() ->
-                    [genserver:request(To, {message_receive, Channel, From, Msg})|| To <- PidList]
+                    [genserver:request(To, {message_receive, Channel, pid_to_list(To), Msg})|| To <- PidList]
                 end),
-
             {reply, message_send, Channels}
 
 
@@ -98,12 +103,12 @@ handler(Channels, {join, Channel, Nick, From}) ->
     end.
 
 
-print_element(Pid, MsgRequest, From) ->
+sendMessage(Pid, MsgRequest, From) ->
     Pid ! MsgRequest,
     io:format("~p~n", [Pid]).
 
-print_list(List, MsgRequest, From) ->
-    lists:foreach(fun(E) -> print_element(E, MsgRequest, From) end, List).
+sendMessages(List, MsgRequest, From) ->
+    lists:foreach(fun(E) -> sendMessage(E, MsgRequest, From) end, List).
 
 
 
