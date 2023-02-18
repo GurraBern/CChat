@@ -29,15 +29,21 @@ handler(ServerState, {join, Channel, Nick, From}) ->
 
         true -> 
             Response = genserver:request(list_to_atom(Channel), {join, From}),
+
             case Response of
-                ok ->
+                join ->
                     {reply, ok, ServerState};
                 user_already_joined ->
                     {reply, user_already_joined, ServerState};
                 error ->
                     {reply, error, ServerState}
             end
-    end.
+    end;
+
+handler(ServerState, stop_channels)->
+   lists:foreach(fun(Channel) -> genserver:stop(list_to_atom(Channel)) end, ServerState#serverState.createdChannels),
+   {reply, ok, ServerState}.
+
 
 channel_handler(ChannelState, {join, From})->
     case lists:member(From, ChannelState#channelState.pids) of
@@ -45,8 +51,8 @@ channel_handler(ChannelState, {join, From})->
             {reply, user_already_joined, ChannelState};
         false ->
             UpdatedPids = lists:append(ChannelState#channelState.pids, [From]),
-            NewChannelState = ChannelState#channelState{pids = UpdatedPids},
-            {reply, ok, NewChannelState}
+            NewChannelState = ChannelState#channelState{channelName = ChannelState#channelState.channelName, pids = UpdatedPids},
+            {reply, join, NewChannelState}
     end;
 
 channel_handler(ChannelState, {leave, From}) ->
@@ -59,21 +65,17 @@ channel_handler(ChannelState, {leave, From}) ->
             {reply, error, ChannelState}
     end;
 
-
+%{message_send, Msg, Channel, self(), St#client_st.nick})
 channel_handler(ChannelState, {message_send, Msg, Channel, From, Nick}) ->  
-    %TODO kolla om medlem?
-
-    %InChannel = lists:member(From, ChannelState#channelState.pids),
-   %io:format("this doesnt work: ~p~n", [InChannel]), %%TODO continue from here
 
 
     case lists:member(From, ChannelState#channelState.pids) of
         true->
             spawn(
-            fun() ->
-                [genserver:request(To, {message_receive, Channel, Nick, Msg}) || To <- ChannelState#channelState.pids, To =/= From]
-            end),
-        {reply, message_send, ChannelState};
+                fun() ->
+                    [genserver:request(To, {message_receive, Channel, Nick, Msg}) || To <- ChannelState#channelState.pids, To =/= From]
+                end),
+            {reply, message_send, ChannelState};
 
         false->
             {reply, error, ChannelState}
@@ -81,9 +83,7 @@ channel_handler(ChannelState, {message_send, Msg, Channel, From, Nick}) ->
     end.
 
   
-stopprocesses(Atom) ->
-    Pids = [Pid || {_, Pid, _} <- erlang:processes(), erlang:whereis(Atom) =:= self()],
-    lists:foreach(fun(Pid) -> erlang:exit(Pid, kill) end, Pids).
+
 
 
 % Start a new server process with the given name
@@ -103,13 +103,6 @@ start(ServerAtom) ->
 stop(ServerAtom) ->
     % TODO Implement function
     % Return ok
+    genserver:request(ServerAtom, stop_channels),
 
-    stopprocesses(ServerAtom),
-    genserver:stop(ServerAtom).
-    %io:format("created Channels end of life: ~p~n", [ServerAtom#serverState.createdChannels]),
-    %spawn(
-    %    fun() ->
-     %       [genserver:stop(list_to_atom(Channel)) || Channel <- ServerAtom#serverState.createdChannels] %TODO Shouldnt this work?
-     %   end), 
-
-   % genserver:stop(ServerAtom).
+    genserver:stop(ServerAtom). %TODO Need to destroy all related processes
