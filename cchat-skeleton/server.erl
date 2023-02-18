@@ -27,7 +27,6 @@ handler(ServerState, {join, Channel, Nick, From}) ->
             NewChannel = #channelState{channelName = Channel, pids = [From]},
             NewServerState = ServerState#serverState{createdChannels = [ServerState#serverState.createdChannels ++ Channel]},%Borde lägga till en ny channel till ServerState, TODO check!
             genserver:start(list_to_atom(Channel), NewChannel, fun channel_handler/2),
-
             {reply, ok, NewServerState};
 
         true -> 
@@ -43,17 +42,13 @@ handler(ServerState, {join, Channel, Nick, From}) ->
     end.
 
 channel_handler(ChannelState, {join, From})->
-    io:format("this doesnt work: ~p~n", [ChannelState#channelState.pids]), %%TODO continue from here
     case lists:member(From, ChannelState#channelState.pids) of
         true ->
             {reply, user_already_joined, ChannelState};
         false ->
             UpdatedPids = lists:append(ChannelState#channelState.pids, [From]),
-
-            io:format("works: ~p~n", [UpdatedPids]),
             NewChannelState = ChannelState#channelState{pids = UpdatedPids},
             {reply, ok, NewChannelState}
-
     end;
 
 channel_handler(ChannelState, {leave, From}) ->
@@ -70,9 +65,11 @@ channel_handler(ChannelState, {leave, From}) ->
 channel_handler(ChannelState, {message_send, Msg, Channel, From, Nick}) ->  
     %TODO kolla om medlem?
 
-    InChannel = lists:member(From, ChannelState#channelState.pids),
-    
-    case InChannel of
+    %InChannel = lists:member(From, ChannelState#channelState.pids),
+   %io:format("this doesnt work: ~p~n", [InChannel]), %%TODO continue from here
+
+
+    case lists:member(From, ChannelState#channelState.pids) of
         true->
             spawn(
             fun() ->
@@ -81,7 +78,9 @@ channel_handler(ChannelState, {message_send, Msg, Channel, From, Nick}) ->
         {reply, message_send, ChannelState};
 
         false->
-            {reply, user_not_joined, ChannelState}
+            {reply, error, ChannelState}
+                   % {reply, error, ChannelState}
+
     end.
 
   

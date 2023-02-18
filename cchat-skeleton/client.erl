@@ -63,10 +63,8 @@ handle(St, {message_send, Channel, Msg}) ->
     case Response of
         message_send -> 
             {reply, ok, St};
-        user_not_joined ->
-            {reply, user_not_joined, St};
         error ->
-            {reply, error, St};
+            {reply, {error, user_not_joined, "skrrrt"}, St};
         {'EXIT', _} ->
             {reply, {error,server_not_reached, "Couldn't reach server"}, St}
     end;
