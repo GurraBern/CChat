@@ -15,8 +15,6 @@
 ).
 
 %TODO fix unique user names on channels
-
-
 initial_state() ->
     #serverState{createdChannels = []}.
 
@@ -79,7 +77,6 @@ channel_handler(ChannelState, {message_send, Msg, Channel, From, Nick}) ->
 
         false->
             {reply, error, ChannelState}
-                   % {reply, error, ChannelState}
 
     end.
 
