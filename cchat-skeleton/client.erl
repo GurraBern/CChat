@@ -18,7 +18,6 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
         server = ServerAtom
     }.
 
-
 % handle/2 handles each kind of request from GUI
 % Parameters:
 %   - the current state of the client (St)
@@ -35,10 +34,8 @@ handle(St, {join, Channel}) ->
         ok -> 
             NewSt = St#client_st{gui = St#client_st.gui, nick = St#client_st.nick, server = St#client_st.server},
             {reply, ok, NewSt};
-
         timeout_error->
-            {reply, {error, server_not_reached, "Non responding server"}, St};
-
+            {reply, {error, server_not_reached, "Timeout error, non responding server"}, St};
         error -> 
             {reply, {error, user_already_joined, "User already joined"}, St};
         {'EXIT', _} ->
@@ -56,25 +53,26 @@ handle(St, {leave, Channel}) ->
 
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
-
     Response = catch genserver:request(list_to_atom(Channel), {message_send, Msg, Channel, self(), St#client_st.nick}),
-
     case Response of
         ok ->
             {reply, ok, St};
         error ->
             {reply, {error, user_not_joined, "User hasn't joined this channel"}, St};
         {'EXIT', _} ->
-            {reply, {error, server_not_reached, "fghjfghfghhfgfhg"}, St}
+            {reply, {error, server_not_reached, "Server no reached"}, St}
     end;
 
 % This case is only relevant for the distinction assignment!
 % Change nick (no check, local only)
 handle(St, {nick, NewNick}) ->
-
-    %skicka till server
-    genserver:request(St#client_st.server, {change_nick, NewNick, self()}),
-    {reply, ok, St#client_st{nick = NewNick}} ;
+    Response = catch genserver:request(St#client_st.server, {change_nick, NewNick, self()}),
+    case Response of
+        ok->
+            {reply, ok, St#client_st{nick = NewNick}};
+        nick_taken->
+            {reply, {error, nick_taken, "Nick already taken"}, St}
+    end;
 
 % ---------------------------------------------------------------------------
 % The cases below do not need to be changed...
@@ -83,7 +81,6 @@ handle(St, {nick, NewNick}) ->
 % Get current nick
 handle(St, whoami) ->
     {reply, St#client_st.nick, St} ;
-
 
 % Incoming message (from channel, to GUI)
 handle(St = #client_st{gui = GUI}, {message_receive, Channel, Nick, Msg}) ->
