@@ -1,125 +1,95 @@
 -module(server).
 -export([start/1,stop/1]).
 
--record(serverState, {
-    createdChannels = [],
-    nicks = []
-    }  
-).
-
--record(channelState, {
-    channelName,
-    pids = []
-    %pids = []::user,
-    %users=maps:new()  %pidKey, nickValue
-    }  
-).
-
-%TODO fix unique user names on channels
-initial_state() ->
-    #serverState{createdChannels = []}.
 
 
-handler(ServerState, {join, Channel, Nick, From}) ->
-
-    UpdatedNicks = case lists:member(Nick, ServerState#serverState.nicks) of
-        true ->
-            ServerState#serverState.nicks;
-        false ->
-             [Nick | ServerState#serverState.nicks]
-    end,
-
-    case lists:member(Channel, ServerState#serverState.createdChannels) of
-        false -> 
-            NewChannel = #channelState{channelName = Channel, pids = [From]},
 
 
-            NewServerState = ServerState#serverState{createdChannels = [ServerState#serverState.createdChannels ++ Channel], nicks = UpdatedNicks},%Borde lägga till en ny channel till ServerState, TODO check!
-            genserver:start(list_to_atom(Channel), NewChannel, fun channel_handler/2),
-            {reply, ok, NewServerState};
+handler({Channels, NicksMap}, {join, Channel, Nick, From}) ->
 
+    case lists:member(From, maps:keys(NicksMap)) of
         true -> 
-            Response = genserver:request(list_to_atom(Channel), {join, From}),
+            case lists:member(Channel, Channels) of
+                false -> 
+                    NewChannelsList = [Channel | Channels] ,%Borde lägga till en ny channel till ServerState, TODO check!
+                    
+                    genserver:start(list_to_atom(Channel), [From], fun channel_handler/2),
+                    {reply, ok, {NewChannelsList, NicksMap}};
 
-            case Response of
-                join ->
-
-
-                    %dostuff
-                    {reply, ok, ServerState};
-                error ->
-                    {reply, user_already_joined, ServerState}
-                
-            end
+                true -> 
+                    Response = catch genserver:request(list_to_atom(Channel), {join, From}),
+                    case Response of
+                        ok -> 
+                            {reply, ok, {Channels, NicksMap}};
+                        error ->
+                            {reply, error, {Channels, NicksMap}};
+                        {'EXIT', _} ->
+                            {reply, {error, server_not_reached, "server not reached"}, {Channels, NicksMap}}
+                    end
+            end;
+        false ->
+            all()
     end;
 
-handler(ServerState, stop_channels)->
-   lists:foreach(fun(Channel) -> genserver:stop(list_to_atom(Channel)) end, ServerState#serverState.createdChannels),
-   {reply, ok, ServerState}.
+
+
+
+handler({Channels, NicksMap}, {change_nick, NewNick, From})->
+
+
+;
+
+
+handler({Channels, NicksMap}, {stop_channels})->
+   lists:foreach(fun(Channel) -> genserver:stop(list_to_atom(Channel)) end, Channels),
+   {reply, ok, {Channels, NicksMap}}.
 
 
 channel_handler(ChannelState, {join, From})->
-    case lists:member(From, ChannelState#channelState.pids) of
+    case lists:member(From, ChannelState) of
         true ->
             {reply, error, ChannelState};
         false ->
-            NewChannelState = ChannelState#channelState{channelName = ChannelState#channelState.channelName, pids = [From | ChannelState#channelState.pids]},
-            {reply, join, NewChannelState}
+            {reply, ok, [From | ChannelState]}
     end;
 
 channel_handler(ChannelState, {leave, From}) ->
-        io:fwrite("about to leave: ~p~n", [From]),
-    case lists:member(From, ChannelState#channelState.pids) of
+    case lists:member(From, ChannelState) of
         true ->
-            NewPidList = lists:delete(From, ChannelState#channelState.pids),%todo same here as above?
-            io:fwrite("Newpidlsit: ~p~n", [NewPidList]),
+            NewChannelState = lists:delete(From, ChannelState),%todo same here as above?
+            %NewChannelState = ChannelState#channelState{channelName = ChannelState#channelState.channelName, pids = NewPidList},
 
-            NewChannelState = ChannelState#channelState{channelName = ChannelState#channelState.channelName, pids = NewPidList},
-            {reply, leave, NewChannelState};
+
+            
+            {reply, ok, NewChannelState};
         false ->
             {reply, error, ChannelState}
     end;
 
 channel_handler(ChannelState, {message_send, Msg, Channel, From, Nick}) ->  
-
-    Others = lists:delete(From, ChannelState#channelState.pids),
-    %io:fwrite("Pids = ~p~n", [Others]),
-   lists:foreach((fun(To) -> genserver:request(To, {message_receive, Channel, Nick, Msg}) end), Others),
-   {reply, ok, ChannelState}.
+    io:fwrite("Pids in this channel: ~p~n", [ChannelState]),
 
 
-    %spawn(
-      %  fun() ->
-     %       [genserver:request(To, {message_receive, Channel, Nick, Msg}) || To <- ChannelState#channelState.pids, To =/= From]
-    %%    end),
-    %{reply, ok, ChannelState}.
 
+    case lists:member(From, ChannelState) of
+        true -> 
+           spawn(
+                fun() ->
+                    [genserver:request(To, {message_receive, Channel, Nick, Msg}) || To <- ChannelState, To =/= From]
+            end),
+            {reply, ok, ChannelState};
 
-    %Ismember = lists:member(From, ChannelState#channelState.pids),
-    % case Ismember of
-    %     true->
-     %        spawn(
-      %           fun() ->
-         %            [genserver:request(To, {message_receive, Channel, Nick, Msg}) || To <- ChannelState#channelState.pids, To =/= From]
-      %           end),
-         %    {reply, message_send, ChannelState};
- %
-        % false->
-         %    {reply, error, ChannelState}
-
-     %end.
-
-  
-
-
+        false ->
+            {reply, error, ChannelState}
+  end.
 
 % Start a new server process with the given name
 % Do not change the signature of this function.
 start(ServerAtom) ->
     % TODO Implement function
     % - Spawn a new process which waits for a message, handles it, then loops infinitely
-    
-    genserver:start(ServerAtom, initial_state(), fun handler/2).
+    %{List, [{Pid, nick}]}
+    genserver:start(ServerAtom, {[],maps:new()}, fun handler/2).
     %gen_server:start(ServerAtom, printMsg()).
     % - Register this process to ServerAtom
     % - Return the process ID
@@ -130,6 +100,7 @@ start(ServerAtom) ->
 stop(ServerAtom) ->
     % TODO Implement function
     % Return ok
-    genserver:request(ServerAtom, stop_channels),
+    genserver:request(ServerAtom, {stop_channels}),
 
-    genserver:stop(ServerAtom). %TODO Need to destroy all related processes
+    genserver:stop(ServerAtom),
+    ok. %TODO Need to destroy all related processes
