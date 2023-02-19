@@ -68,9 +68,11 @@ channel_handler(ChannelState, {join, From})->
     end;
 
 channel_handler(ChannelState, {leave, From}) ->
+        io:fwrite("about to leave: ~p~n", [From]),
     case lists:member(From, ChannelState#channelState.pids) of
         true ->
             NewPidList = lists:delete(From, ChannelState#channelState.pids),%todo same here as above?
+            io:fwrite("Newpidlsit: ~p~n", [NewPidList]),
 
             NewChannelState = ChannelState#channelState{channelName = ChannelState#channelState.channelName, pids = NewPidList},
             {reply, leave, NewChannelState};

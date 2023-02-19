@@ -54,7 +54,13 @@ handle(St, {leave, Channel}) ->
     case Response of
         leave ->
                 %Ta bort from list
+            %io:fwrite("about to leave: ~p~n", [S])
+
+            
             lists:delete([Channel], St#client_st.channels),
+
+
+
             {reply, ok, St};
         error -> {reply, {error, user_not_joined, "User not in channel"}, St}
     end;
@@ -62,9 +68,11 @@ handle(St, {leave, Channel}) ->
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
 
+    
+    
     case lists:member(Channel, St#client_st.channels) of
         true ->
-            Response = genserver:request(list_to_atom(Channel), {message_send, Msg, Channel, self(), St#client_st.nick}),
+            Response = catch genserver:request(list_to_atom(Channel), {message_send, Msg, Channel, self(), St#client_st.nick}),
 
             case Response of
                 timeout_error ->
@@ -74,7 +82,7 @@ handle(St, {message_send, Channel, Msg}) ->
             end;
 
         false ->
-            {reply, {error, user_not_joined, "User is not part of channel"}, St}
+            {reply, {error, user_not_joined, "User is not pars todo"}, St}
     end;
 
 
