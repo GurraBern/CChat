@@ -32,10 +32,16 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 % Join channel
 handle(St, {join, Channel}) ->
     Response = catch genserver:request(St#client_st.server, {join, Channel, St#client_st.nick, self()}),
+
+    io:format("got some response"),
     case Response of
         ok -> 
             NewSt = St#client_st{gui = St#client_st.gui, nick = St#client_st.nick, server = St#client_st.server, channels = lists:append(St#client_st.channels, [Channel])},
             {reply, ok, NewSt};
+
+        timeout_error->
+            {reply, {error, server_not_reached, "Non responding server"}, St};
+
         user_already_joined -> 
             {reply, {error, user_already_joined, "User already joined"}, St};
         {'EXIT', _} ->
@@ -56,18 +62,34 @@ handle(St, {leave, Channel}) ->
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
 
-    
+    case lists:member(Channel, St#client_st.channels) of
+        true ->
+            Response = genserver:request(list_to_atom(Channel), {message_send, Msg, Channel, self(), St#client_st.nick}),
 
-    Response = genserver:request(list_to_atom(Channel), {message_send, Msg, Channel, self(), St#client_st.nick}),
+            case Response of
+                timeout_error ->
+                    {error, server_not_reached, "Server unreachable"};
+                ok ->
+                    {reply, ok, St}
+            end;
 
-    case Response of
-        message_send -> 
-            {reply, ok, St};
-        error ->
-            {reply, {error, user_not_joined, "skrrrt"}, St};
-        {'EXIT', _} ->
-            {reply, {error,server_not_reached, "Couldn't reach server"}, St}
+        false ->
+            {reply, {error, user_not_joined, "User is not part of channel"}, St}
     end;
+
+
+
+
+
+    %Response = genserver:request(list_to_atom(Channel), {message_send, Msg, Channel, self(), St#client_st.nick}),
+   % case Response of
+    %    message_send -> 
+    %%        {reply, ok, St};
+     %   error ->
+     %       {reply, {error, user_not_joined, "skrrrt"}, St};
+      %%  {'EXIT', _} ->
+       %     {reply, {error,server_not_reached, "Couldn't reach server"}, St}
+  %  end;
 
 
 

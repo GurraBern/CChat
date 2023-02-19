@@ -2,7 +2,8 @@
 -export([start/1,stop/1]).
 
 -record(serverState, {
-    createdChannels = []
+    createdChannels = [],
+    nicks = []
     }  
 ).
 
@@ -20,10 +21,20 @@ initial_state() ->
 
 
 handler(ServerState, {join, Channel, Nick, From}) ->
+
+    UpdatedNicks = case lists:member(Nick, ServerState#serverState.nicks) of
+        true ->
+            ServerState#serverState.nicks;
+        false ->
+             [Nick | ServerState#serverState.nicks]
+    end,
+
     case lists:member(Channel, ServerState#serverState.createdChannels) of
         false -> 
             NewChannel = #channelState{channelName = Channel, pids = [From]},
-            NewServerState = ServerState#serverState{createdChannels = [ServerState#serverState.createdChannels ++ Channel]},%Borde lägga till en ny channel till ServerState, TODO check!
+
+
+            NewServerState = ServerState#serverState{createdChannels = [ServerState#serverState.createdChannels ++ Channel], nicks = UpdatedNicks},%Borde lägga till en ny channel till ServerState, TODO check!
             genserver:start(list_to_atom(Channel), NewChannel, fun channel_handler/2),
             {reply, ok, NewServerState};
 
@@ -32,11 +43,13 @@ handler(ServerState, {join, Channel, Nick, From}) ->
 
             case Response of
                 join ->
+
+
+                    %dostuff
                     {reply, ok, ServerState};
-                user_already_joined ->
-                    {reply, user_already_joined, ServerState};
                 error ->
-                    {reply, error, ServerState}
+                    {reply, user_already_joined, ServerState}
+                
             end
     end;
 
@@ -48,39 +61,51 @@ handler(ServerState, stop_channels)->
 channel_handler(ChannelState, {join, From})->
     case lists:member(From, ChannelState#channelState.pids) of
         true ->
-            {reply, user_already_joined, ChannelState};
+            {reply, error, ChannelState};
         false ->
-            UpdatedPids = lists:append(ChannelState#channelState.pids, [From]),
-            NewChannelState = ChannelState#channelState{channelName = ChannelState#channelState.channelName, pids = UpdatedPids},
+            NewChannelState = ChannelState#channelState{channelName = ChannelState#channelState.channelName, pids = [From | ChannelState#channelState.pids]},
             {reply, join, NewChannelState}
     end;
 
 channel_handler(ChannelState, {leave, From}) ->
     case lists:member(From, ChannelState#channelState.pids) of
         true ->
-            NewPidList = lists:delete(From, ChannelState#channelState.pids),
+            NewPidList = lists:delete(From, ChannelState#channelState.pids),%todo same here as above?
+
             NewChannelState = ChannelState#channelState{channelName = ChannelState#channelState.channelName, pids = NewPidList},
             {reply, leave, NewChannelState};
         false ->
             {reply, error, ChannelState}
     end;
 
-%{message_send, Msg, Channel, self(), St#client_st.nick})
 channel_handler(ChannelState, {message_send, Msg, Channel, From, Nick}) ->  
 
+    Others = lists:delete(From, ChannelState#channelState.pids),
+    %io:fwrite("Pids = ~p~n", [Others]),
+   lists:foreach((fun(To) -> genserver:request(To, {message_receive, Channel, Nick, Msg}) end), Others),
+   {reply, ok, ChannelState}.
 
-    case lists:member(From, ChannelState#channelState.pids) of
-        true->
-            spawn(
-                fun() ->
-                    [genserver:request(To, {message_receive, Channel, Nick, Msg}) || To <- ChannelState#channelState.pids, To =/= From]
-                end),
-            {reply, message_send, ChannelState};
 
-        false->
-            {reply, error, ChannelState}
+    %spawn(
+      %  fun() ->
+     %       [genserver:request(To, {message_receive, Channel, Nick, Msg}) || To <- ChannelState#channelState.pids, To =/= From]
+    %%    end),
+    %{reply, ok, ChannelState}.
 
-    end.
+
+    %Ismember = lists:member(From, ChannelState#channelState.pids),
+    % case Ismember of
+    %     true->
+     %        spawn(
+      %           fun() ->
+         %            [genserver:request(To, {message_receive, Channel, Nick, Msg}) || To <- ChannelState#channelState.pids, To =/= From]
+      %           end),
+         %    {reply, message_send, ChannelState};
+ %
+        % false->
+         %    {reply, error, ChannelState}
+
+     %end.
 
   
 
