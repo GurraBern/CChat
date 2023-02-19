@@ -18,7 +18,6 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
         server = ServerAtom
     }.
 
-
 % handle/2 handles each kind of request from GUI
 % Parameters:
 %   - the current state of the client (St)
@@ -29,29 +28,51 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 
 % Join channel
 handle(St, {join, Channel}) ->
-    Response = genserver:request(St#client_st.server, {join, Channel, St#client_st.nick, self()}),
+    Response = catch genserver:request(St#client_st.server, {join, Channel, St#client_st.nick, self()}),
+
     case Response of
-        ok -> {reply, ok, St};
-        error -> {reply, {error, user_already_joined, "User already joined"}, St}
+        ok -> 
+            NewSt = St#client_st{gui = St#client_st.gui, nick = St#client_st.nick, server = St#client_st.server},
+            {reply, ok, NewSt};
+        timeout_error->
+            {reply, {error, server_not_reached, "Timeout error, non responding server"}, St};
+        error -> 
+            {reply, {error, user_already_joined, "User already joined"}, St};
+        {'EXIT', _} ->
+            {reply, {error, server_not_reached, "Non responding server"}, St}
     end;
 
 % Leave channel
 handle(St, {leave, Channel}) ->
-    Response = genserver:request(St#client_st.server, {leave, Channel, nick, self()}),
+    Response = catch genserver:request(list_to_atom(Channel), {leave, self()}),
     case Response of
-        ok -> {reply, ok, St};
-        error -> {reply, {error, user_not_in_chanel, "User not in channel"}, St}
+        ok ->
+            {reply, ok, St};
+        error -> {reply, {error, user_not_joined, "User not in channel"}, St}
     end;
 
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
-    genserver:request(St#client_st.server, {message_send, Msg, Channel, self()}),
-    {reply, ok, St};
+    Response = catch genserver:request(list_to_atom(Channel), {message_send, Msg, Channel, self(), St#client_st.nick}),
+    case Response of
+        ok ->
+            {reply, ok, St};
+        error ->
+            {reply, {error, user_not_joined, "User hasn't joined this channel"}, St};
+        {'EXIT', _} ->
+            {reply, {error, server_not_reached, "Server no reached"}, St}
+    end;
 
 % This case is only relevant for the distinction assignment!
 % Change nick (no check, local only)
 handle(St, {nick, NewNick}) ->
-    {reply, ok, St#client_st{nick = NewNick}} ;
+    Response = catch genserver:request(St#client_st.server, {change_nick, NewNick, self()}),
+    case Response of
+        ok->
+            {reply, ok, St#client_st{nick = NewNick}};
+        nick_taken->
+            {reply, {error, nick_taken, "Nick already taken"}, St}
+    end;
 
 % ---------------------------------------------------------------------------
 % The cases below do not need to be changed...
@@ -61,13 +82,8 @@ handle(St, {nick, NewNick}) ->
 handle(St, whoami) ->
     {reply, St#client_st.nick, St} ;
 
-
 % Incoming message (from channel, to GUI)
 handle(St = #client_st{gui = GUI}, {message_receive, Channel, Nick, Msg}) ->
-    io:format("The messagereceive:  ~p~n", [message_receive]),
-    io:format("The Channel:  ~p~n", [Channel]),
-    io:format("The Nick:  ~p~n", [Nick]),
-    %io:format("The message:  ~p~n", [Msg]),
     gen_server:call(GUI, {message_receive, Channel, Nick++"> "++Msg}),
     {reply, ok, St} ;
 
