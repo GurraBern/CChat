@@ -26,14 +26,15 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 %   - Data is what is sent to GUI, either the atom `ok` or a tuple {error, Atom, "Error message"}
 %   - NewState is the updated state of the client
 
+
 % Join channel
+% Sends a request to the server to join a channel, receiving response from the server and acting accordingly.
 handle(St, {join, Channel}) ->
     Response = catch genserver:request(St#client_st.server, {join, Channel, St#client_st.nick, self()}),
 
     case Response of
         ok -> 
-            NewSt = St#client_st{gui = St#client_st.gui, nick = St#client_st.nick, server = St#client_st.server},
-            {reply, ok, NewSt};
+            {reply, ok, St};
         timeout_error->
             {reply, {error, server_not_reached, "Timeout error, non responding server"}, St};
         error -> 
@@ -43,6 +44,7 @@ handle(St, {join, Channel}) ->
     end;
 
 % Leave channel
+% Sends a request to the server to leave a channel, receiving response from the server and acting accordingly.
 handle(St, {leave, Channel}) ->
     Response = catch genserver:request(list_to_atom(Channel), {leave, self()}),
     case Response of
@@ -52,6 +54,7 @@ handle(St, {leave, Channel}) ->
     end;
 
 % Sending message (from GUI, to channel)
+% Sends a request to a channel trying to send a message to all members, receiving response from channel and acting accordingly.
 handle(St, {message_send, Channel, Msg}) ->
     Response = catch genserver:request(list_to_atom(Channel), {message_send, Msg, Channel, self(), St#client_st.nick}),
     case Response of
@@ -65,6 +68,8 @@ handle(St, {message_send, Channel, Msg}) ->
 
 % This case is only relevant for the distinction assignment!
 % Change nick (no check, local only)
+% Sends a request to the server to change nick, receiving response from server and acting accordingly.
+% If nick is taken do nothing otherwise update the State.
 handle(St, {nick, NewNick}) ->
     Response = catch genserver:request(St#client_st.server, {change_nick, NewNick, self()}),
     case Response of
